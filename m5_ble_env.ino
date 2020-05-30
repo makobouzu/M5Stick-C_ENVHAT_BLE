@@ -21,6 +21,7 @@ uint8_t  seq   = 0;
 
 BLECharacteristic *pCharacteristic = NULL;
 bool deviceConnected = false;
+uint8_t buf[7];
 
 // https://www.uuidgenerator.net/
 //Device UUID  = D9DFFD12-62B9-1EF7-33C2-C5A5E1D44D10
@@ -70,7 +71,6 @@ class MyServerCallbacks: public BLEServerCallbacks {
 //-------------------------------------------------------------------------------------------------------------
 class dataCb: public BLECharacteristicCallbacks {
   void onRead(BLECharacteristic *pCharacteristic){
-    uint8_t buf[7];
     memset(buf, 0, sizeof buf);               // バッファーを0クリア
     buf[0] = seq++;                           // シーケンス番号をバッファーにセット
     buf[1] = (uint8_t)(temp & 0xff);          // 温度の下位バイトをセット
@@ -113,7 +113,8 @@ void setup() {
     pCharacteristic = pService->createCharacteristic(
                                          CHARACTERISTIC_UUID,
                                          BLECharacteristic::PROPERTY_READ |
-                                         BLECharacteristic::PROPERTY_NOTIFY
+                                         BLECharacteristic::PROPERTY_NOTIFY |
+                                         BLECharacteristic::PROPERTY_WRITE
                                        );
     pCharacteristic->setCallbacks(new dataCb());
 
@@ -132,6 +133,7 @@ void loop() {
 
   if (deviceConnected) {
     if(M5.BtnA.wasPressed()) {
+      pCharacteristic->setValue(buf, sizeof buf);
       pCharacteristic->notify();
     }
   }
