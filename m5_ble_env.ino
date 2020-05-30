@@ -19,6 +19,9 @@ uint16_t humid = 0;
 uint16_t press = 0;
 uint8_t  seq   = 0;
 
+BLECharacteristic* pCharacteristic = NULL;
+bool deviceConnected = false;
+
 // https://www.uuidgenerator.net/
 //Device UUID  = D9DFFD12-62B9-1EF7-33C2-C5A5E1D44D10
 #define SERVICE_UUID        "3352"
@@ -55,11 +58,26 @@ class MyServerCallbacks: public BLEServerCallbacks {
         conn_params.min_int = 0x10;    // min_int = 0x10*1.25ms = 20ms
         conn_params.timeout = 400;     // timeout = 400*10ms = 4000ms
         esp_ble_gap_update_conn_params(&conn_params);
+        deviceConnected = true;
     };
 
     void onDisconnect(BLEServer* pServer) {
         Serial.println("disconnected");
+        deviceConnected = false;
     }
+};
+//-------------------------------------------------------------------------------------------------------------
+class MyCallbacks: public BLECharacteristicCallbacks {
+  void onRead(BLECharacteristic *pCharacteristic) {
+    Serial.println("read");
+    pCharacteristic->setValue("Hello World!");
+  }
+
+  void onWrite(BLECharacteristic *pCharacteristic) {
+    Serial.println("write");
+    std::string value = pCharacteristic->getValue();
+    Serial.println(value.c_str());
+  }
 };
 
 //-------------------------------------------------------------------------------------------------------------
@@ -104,8 +122,13 @@ void setup() {
     pServer->setCallbacks(new MyServerCallbacks());    // コールバック関数を設定
 
     BLEService *pService = pServer->createService(SERVICE_UUID);  // サービスを生成
-                                                                 // キャラクタリスティクスを生成
-    pService->createCharacteristic(CHARACTERISTIC_UUID, BLECharacteristic::PROPERTY_READ)->setCallbacks(new dataCb()); // コールバック関数を設定
+   
+    pCharacteristic = pService->createCharacteristic(
+                                         CHARACTERISTIC_UUID,
+                                         BLECharacteristic::PROPERTY_READ |
+                                         BLECharacteristic::PROPERTY_NOTIFY
+                                       );
+    pCharacteristic->setCallbacks(new dataCb());
 
     pService->start();                                 // サービスを起動
     pServer->getAdvertising()->start();                // アドバタイズを起動
@@ -119,4 +142,11 @@ void loop() {
   M5.Lcd.printf("humid:%2.0f%%\r\n", (float)humid / 100);
   M5.Lcd.setCursor(0, 60, 2);
   M5.Lcd.printf("press:%2.1fhPa\r\n", (float)press / 10);
+
+  if (deviceConnected) {
+    if(M5.BtnA.wasPressed()) {
+      pCharacteristic->notify();
+    }
+  }
+  M5.update();
 }
