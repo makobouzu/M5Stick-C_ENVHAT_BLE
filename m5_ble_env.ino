@@ -19,7 +19,7 @@ uint16_t humid = 0;
 uint16_t press = 0;
 uint8_t  seq   = 0;
 
-BLECharacteristic* pCharacteristic = NULL;
+BLECharacteristic *pCharacteristic = NULL;
 bool deviceConnected = false;
 
 // https://www.uuidgenerator.net/
@@ -66,23 +66,10 @@ class MyServerCallbacks: public BLEServerCallbacks {
         deviceConnected = false;
     }
 };
-//-------------------------------------------------------------------------------------------------------------
-class MyCallbacks: public BLECharacteristicCallbacks {
-  void onRead(BLECharacteristic *pCharacteristic) {
-    Serial.println("read");
-    pCharacteristic->setValue("Hello World!");
-  }
-
-  void onWrite(BLECharacteristic *pCharacteristic) {
-    Serial.println("write");
-    std::string value = pCharacteristic->getValue();
-    Serial.println(value.c_str());
-  }
-};
 
 //-------------------------------------------------------------------------------------------------------------
 class dataCb: public BLECharacteristicCallbacks {
-  void onRead(BLECharacteristic *pChar){
+  void onRead(BLECharacteristic *pCharacteristic){
     uint8_t buf[7];
     memset(buf, 0, sizeof buf);               // バッファーを0クリア
     buf[0] = seq++;                           // シーケンス番号をバッファーにセット
@@ -92,7 +79,7 @@ class dataCb: public BLECharacteristicCallbacks {
     buf[4] = (uint8_t)((humid >> 8) & 0xff);  // 湿度の上位バイトをセット
     buf[5] = (uint8_t)(press & 0xff);         // 気圧の下位バイトをセット
     buf[6] = (uint8_t)((press >> 8) & 0xff);  // 気圧の上位バイトをセット
-    pChar->setValue(buf, sizeof buf);         // データーを書き込み
+    pCharacteristic->setValue(buf, sizeof buf);         // データーを書き込み
   }
 };
 
