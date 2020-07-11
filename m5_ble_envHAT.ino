@@ -11,30 +11,30 @@
 #include <esp_wifi.h>
 #include <esp_gatts_api.h>
 
-DHT12 dht12;
-Adafruit_BMP280 bme;
-
-uint16_t temp  = 0;
-uint16_t humid = 0;
-uint16_t press = 0;
-uint8_t  seq   = 0;
+// https://www.uuidgenerator.net/
+#define SERVICE_UUID        "3352"
+#define CHARACTERISTIC_UUID "3353"
 
 BLECharacteristic *pCharacteristic = NULL;
 bool deviceConnected = false;
 uint8_t buf[7];
 
-// https://www.uuidgenerator.net/
-//Device UUID  = D9DFFD12-62B9-1EF7-33C2-C5A5E1D44D10
-#define SERVICE_UUID        "3352"
-#define CHARACTERISTIC_UUID "3353"
+DHT12 dht12;
+Adafruit_BMP280 bme;
+
+uint8_t  seq   = 0;
+uint16_t temp  = 0;
+uint16_t humid = 0;
+uint16_t press = 0;
 
 //Value  = 0x + sequence +  temp  + humid + press
 //Value0 = 0x +    00    + 9a-0b  + 0c-0d + 51-27
 //Value1 = 0x +    01    + 9a-0b  + 0c-0d + 51-27
 //Value2 = 0x +    02    + 9a-0b  + 0c-0d + 51-27
+// ........
 //16-base                   0b9a     0d0c    2751
 //10-base                   2970     3340   10065
-//
+
 
 //-------------------------------------------------------------------------------------------------------------
 void bdaDump(esp_bd_addr_t bd) {
@@ -70,7 +70,12 @@ class MyServerCallbacks: public BLEServerCallbacks {
 
 //-------------------------------------------------------------------------------------------------------------
 class dataCb: public BLECharacteristicCallbacks {
+  
   void onRead(BLECharacteristic *pCharacteristic){
+    temp  = dht12.readTemperature() * 100;
+    humid = dht12.readHumidity() * 100;
+    press = bme.readPressure() / 100 * 10;
+    
     memset(buf, 0, sizeof buf);               // バッファーを0クリア
     buf[0] = seq++;                           // シーケンス番号をバッファーにセット
     buf[1] = (uint8_t)(temp & 0xff);          // 温度の下位バイトをセット
@@ -81,27 +86,39 @@ class dataCb: public BLECharacteristicCallbacks {
     buf[6] = (uint8_t)((press >> 8) & 0xff);  // 気圧の上位バイトをセット
     pCharacteristic->setValue(buf, sizeof buf);         // データーを書き込み
   }
+
+  void onNotify(BLECharacteristic *pCharacteristic){
+    temp  = dht12.readTemperature() * 100;
+    humid = dht12.readHumidity() * 100;
+    press = bme.readPressure() / 100 * 10;
+    
+    memset(buf, 0, sizeof buf);               // バッファーを0クリア
+    buf[0] = seq++;                           // シーケンス番号をバッファーにセット
+    buf[1] = (uint8_t)(temp & 0xff);          // 温度の下位バイトをセット
+    buf[2] = (uint8_t)((temp >> 8) & 0xff);   // 温度の上位バイトをセット
+    buf[3] = (uint8_t)(humid & 0xff);         // 湿度の下位バイトをセット
+    buf[4] = (uint8_t)((humid >> 8) & 0xff);  // 湿度の上位バイトをセット
+    buf[5] = (uint8_t)(press & 0xff);         // 気圧の下位バイトをセット
+    buf[6] = (uint8_t)((press >> 8) & 0xff);  // 気圧の上位バイトをセット
+    pCharacteristic->setValue(buf, sizeof buf);         // データーを書き込み
+  }
+  
 };
 
 //-------------------------------------------------------------------------------------------------------------
 void setup() {
     M5.begin();
-    
-    M5.Axp.ScreenBreath(10);    // 画面の輝度を下げる
-    M5.Lcd.setRotation(3);      // 左を上にする
-    M5.Lcd.fillScreen(BLACK);   // 背景を黒にする
+    M5.Axp.ScreenBreath(10);
+    M5.Lcd.setRotation(3);
+    M5.Lcd.fillScreen(BLACK);
     M5.Lcd.setCursor(0, 0, 2);
     M5.Lcd.printf("M5Stick-C_Env");
 
-    Wire.begin(0, 26);               // I2Cを初期化する
-    if (!bme.begin(0x76)) {  // BMP280を初期化する
+    Wire.begin(0, 26);
+    if (!bme.begin(0x76)) {
         M5.Lcd.println("BMP280 Fail");
         while (1);
     }
-
-    temp  = dht12.readTemperature() * 100;
-    humid = dht12.readHumidity() * 100;
-    press = bme.readPressure() / 100 * 10;
 
     Serial.println("Starting BLE work!");
     BLEDevice::init("M5Stick-C_Env");                  // デバイスを初期化
@@ -113,8 +130,7 @@ void setup() {
     pCharacteristic = pService->createCharacteristic(
                                          CHARACTERISTIC_UUID,
                                          BLECharacteristic::PROPERTY_READ |
-                                         BLECharacteristic::PROPERTY_NOTIFY |
-                                         BLECharacteristic::PROPERTY_WRITE
+                                         BLECharacteristic::PROPERTY_NOTIFY
                                        );
     pCharacteristic->setCallbacks(new dataCb());
 
@@ -124,6 +140,12 @@ void setup() {
 }
 
 void loop() {
+  M5.update();
+  
+  temp  = dht12.readTemperature() * 100;
+  humid = dht12.readHumidity() * 100;
+  press = bme.readPressure() / 100 * 10;
+  
   M5.Lcd.setCursor(0, 20, 2);
   M5.Lcd.printf("temp: %2.1f'C\r\n", (float)temp / 100);
   M5.Lcd.setCursor(0, 40, 2);
@@ -132,10 +154,19 @@ void loop() {
   M5.Lcd.printf("press:%2.1fhPa\r\n", (float)press / 10);
 
   if (deviceConnected) {
-    if(M5.BtnA.wasPressed()) {
-      pCharacteristic->setValue(buf, sizeof buf);
-      pCharacteristic->notify();
-    }
+    memset(buf, 0, sizeof buf);
+    buf[0] = seq++; 
+    buf[1] = (uint8_t)(temp & 0xff);
+    buf[2] = (uint8_t)((temp >> 8) & 0xff);
+    buf[3] = (uint8_t)(humid & 0xff);
+    buf[4] = (uint8_t)((humid >> 8) & 0xff);
+    buf[5] = (uint8_t)(press & 0xff);
+    buf[6] = (uint8_t)((press >> 8) & 0xff);
+    pCharacteristic->setValue(buf, sizeof buf);
+//    if(M5.BtnA.wasPressed()) {
+//      pCharacteristic->notify();
+//    }
+    pCharacteristic->notify();
+    delay(200);
   }
-  M5.update();
 }
